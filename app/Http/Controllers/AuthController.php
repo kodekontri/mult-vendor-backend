@@ -31,8 +31,10 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
+        $user = null;
         $valid = \validator($request->all(),[
             'username' => 'required|unique:users,username',
+            'phone' => 'required|unique:users,phone',
             'email' => 'required|email:rfc|unique:users,email',
             'password' => 'required|min:6|max:18'
         ]);
@@ -45,37 +47,37 @@ class AuthController extends Controller
             ], 406);
         }
 
-        $input = $request->all();
-        $input['password'] = Hash::make($input['password']);
-
         try {
+            $input = $request->all();
+            $input['password'] = Hash::make($input['password']);
             $user = User::create($input);
+
+            if (!$user){
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Account failed to create for some reasons. Please try again',
+                    'error' => 'Failed to create account'
+                ], 406);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => "Account created",
+                'data' => [
+                    'user_id' => $user->id
+                ]
+            ], 201);
+
         }catch (\PDOException $e){
+            if($user){
+                $user->delete();
+            }
             return response()->json([
                 'status' => false,
                 'message' => 'registration failed',
                 'error' => $e->getMessage()
             ], 500);
         }
-
-
-
-        if (!$user){
-            return response()->json([
-                'status' => false,
-                'message' => 'Account failed to create for some reasons. Please try again',
-                'error' => 'Failed to create account'
-            ], 406);
-        }
-
-        return response()->json([
-            'status' => true,
-            'message' => "Account created",
-            'data' => [
-                'user_id' => $user->id
-            ]
-        ], 201);
-
     }
 
     public function login(Request $request)
