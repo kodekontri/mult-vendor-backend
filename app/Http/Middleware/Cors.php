@@ -23,6 +23,11 @@ class Cors
             'Access-Control-Allow-Headers'     => 'Content-Type, Authorization, X-Requested-With'
         ];
 
+        $acceptHeader = strtolower($request->headers->get('accept'));
+        if ($acceptHeader !== 'application/json') {
+            $request->headers->set('Accept', 'application/json');
+        }
+
         if ($request->isMethod('OPTIONS'))
         {
             return response()->json('{"method":"OPTIONS"}', 200, $headers);
@@ -34,6 +39,7 @@ class Cors
             $response->headers->set($key, $value);
         }
 
+        $response->headers->set('Content-Type', 'application/json');
         return $response;
     }
 }

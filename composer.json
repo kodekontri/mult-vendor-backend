@@ -6,9 +6,11 @@
     "type": "project",
     "require": {
         "php": "^7.3|^8.0",
+        "anik/form-request": "^4.2",
         "dusterio/lumen-passport": "^0.3.4",
         "flipbox/lumen-generator": "^8.2",
         "guzzlehttp/guzzle": "7.0",
+        "illuminate/mail": "^8.50",
         "laravel/lumen-framework": "^8.0"
     },
     "require-dev": {

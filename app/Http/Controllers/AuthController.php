@@ -3,13 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Dotenv\Validator;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\BadResponseException;
-use GuzzleHttp\Exception\GuzzleException;
-use Illuminate\Http\Request;
+use http\Client\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Testing\Fluent\Concerns\Has;
+use App\Http\Requests\RegisterUserRequest;
+use App\Http\Requests\LoginUserRequest;
+use App\Events\NewAccountRegistered;
+use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
@@ -29,36 +29,14 @@ class AuthController extends Controller
     }
 
 
-    public function register(Request $request)
+    public function register(RegisterUserRequest $request)
     {
-        $user = null;
-        $valid = \validator($request->all(),[
-            'username' => 'required|unique:users,username',
-            'phone' => 'required|unique:users,phone',
-            'email' => 'required|email:rfc|unique:users,email',
-            'password' => 'required|min:6|max:18'
-        ]);
-
-        if ($valid->fails()){
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid credentials',
-                'error' => $valid->errors()->toArray()
-            ], 406);
-        }
-
         try {
-            $input = $request->all();
+            $input = $request->validated();
             $input['password'] = Hash::make($input['password']);
             $user = User::create($input);
 
-            if (!$user){
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Account failed to create for some reasons. Please try again',
-                    'error' => 'Failed to create account'
-                ], 406);
-            }
+            event(new NewAccountRegistered($user));
 
             return response()->json([
                 'status' => true,
@@ -68,72 +46,86 @@ class AuthController extends Controller
                 ]
             ], 201);
 
-        }catch (\PDOException $e){
-            if($user){
+        }catch (\Exception $e){
+            if(isset($user) && $user){
                 $user->delete();
             }
             return response()->json([
                 'status' => false,
                 'message' => 'registration failed',
                 'error' => $e->getMessage()
-            ], 500);
+            ], 406);
         }
     }
 
-    public function login(Request $request)
+    public function login(LoginUserRequest $request)
     {
-        $valid = \validator($request->all(),[
-            'email' => 'required',
-            'password' => 'required|min:6|max:18'
-        ]);
-
-        if ($valid->fails()){
-            return response()->json([
-                'status' => false,
-                'message' => $valid->errors()->toArray(),
-                'error' => 'Invalid credentials'
-            ], 406);
-        }
-
-        $user = User::where('username',$request->email)
-            ->orWhere('email', $request->email)->first();
-
-        if (!$user){
-            return response()->json([
-                'status' => false,
-                'message' => 'Account not found',
-                'error' => 'invalid credentials'
-            ], 406);
-        }
-
-        if(!Hash::check($request->password, $user->password)){
-            return response()->json([
-                'status' => false,
-                'message' => 'Password incorrect',
-                'error' => 'invalid credentials'
-            ], 406);
-        }
-
         try {
+
+            // Check if user data exist
+            if (!$user = User::attempt($request->email, $request->password)){
+                throw new \Exception('Invalid credentials provided', 400);
+            }
+
+            if (!$user->emailVerified()){
+                throw new \Exception('Account not yet verified. Please verify your mail', 401);
+            }
+
+
             $client = new Client();
-            return $client->request('POST', config('service.passport.login_endpoint'),[
-                "form_params" => [
+            $response = $client->request('POST',
+                config('service.passport.login_endpoint'),
+                ["form_params" => [
                     'client_secret' => config('service.passport.client_secret'),
                     'client_id' => config('service.passport.client_id'),
                     'grant_type' => 'password',
                     'username' => $request->email,
                     'password' => $request->password
-                ],
-                'header' => [
-                    'connection'=>'keep-alive'
                 ]
             ]);
-        }catch (GuzzleException $e){
+
+            $response = (array) json_decode($response->getBody()->getContents());
+            $response['user'] = $user;
+
+            return response()->json([
+                'status' => true,
+                'message' => "Login successful",
+                'data' => $response
+            ], 201);
+        }catch (\Exception $e){
             return response()->json([
                 'status' => false,
                 'message' => 'Login Failed. '.$e->getMessage(),
                 'error' => $e->getMessage()
-            ], 500);
+            ], $e->getCode() ? $e->getCode() : 500);
+        }
+    }
+
+    public function verify(\Illuminate\Http\Request $request, $id)
+    {
+        try {
+            $token = $request->get('token');
+
+            if(!$user = User::find($id)){
+                throw new \Exception("Bad request", 400);
+            }
+
+            if (!$user->verifyWithToken($token)){
+                throw new \Exception("Bad request", 400);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => "Account verified",
+                'data' => []
+            ], 201);
+
+        }catch (\Exception $e){
+            return response()->json([
+                'status' => false,
+                'message' => 'Verification failed. '.$e->getMessage(),
+                'error' => $e->getMessage()
+            ], $e->getCode() ? $e->getCode() : 500);
         }
     }
 

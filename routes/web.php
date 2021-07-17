@@ -1,4 +1,5 @@
 <?php
+use \Illuminate\Support\Facades\Route;
 
 /** @var \Laravel\Lumen\Routing\Router $router */
 
@@ -13,8 +14,6 @@
 |
 */
 
-
-
 $router->group(['prefix'=>'/api/v1'], function() use($router){
     $router->group(['middleware' => 'auth'], function () use ($router){
         $router->get('/', ['uses'=>'AuthController@index', 'as' => 'home']);
@@ -22,5 +21,7 @@ $router->group(['prefix'=>'/api/v1'], function() use($router){
 
     $router->post('/register', ['uses'=>'AuthController@register', 'as' => 'register']);
     $router->post('/login', ['uses'=>'AuthController@login', 'as' => 'login']);
+    $router->get('/verify/{id}', ['uses'=>'AuthController@verify']);
     $router->post('/logout', ['uses'=>'AuthController@logout', 'as' => 'logout']);
 });
+
